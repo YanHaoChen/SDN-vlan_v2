@@ -24,10 +24,10 @@ from vlan_set import vlans_set
 # bfs
 import Queue
 
-class sdn_vlan(app_manager.RyuApp):
+class sdn_vlan_v2(app_manager.RyuApp):
 	OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 	def __init__(self, *args, **kwargs):
-		super(sdn_vlan, self).__init__(*args, **kwargs)
+		super(sdn_vlan_v2, self).__init__(*args, **kwargs)
 		self.switches_table = {}
 		self.vlans_table = {}
 
@@ -168,6 +168,9 @@ class sdn_vlan(app_manager.RyuApp):
 			table_1_inst = [goto_table_2_action]
 			self.add_flow(datapath=datapath, match=table_1_match, inst=table_1_inst, priority=99, table=1)
 
+			trunk_drop_match = parser.OFPMatch(in_port=trunk["port"])
+			# drop
+			self.add_flow(datapath=datapath, match=trunk_drop_match, inst=[], priority=0, table=2)
 		return
 
 	### packet_in_handler
@@ -231,7 +234,6 @@ class sdn_vlan(app_manager.RyuApp):
 
 		if port not in trunks:
 			self.switches_table[datapath.id][pkt_ethernet.src] = port
-			print self.switches_table
 			none_vlan_tag_match = parser.OFPMatch(eth_src=pkt_ethernet.src, vlan_vid=0x0000)
 			push_vlan_tag_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
 																[parser.OFPActionPushVlan(ETH_TYPE_8021Q),
@@ -274,7 +276,7 @@ class sdn_vlan(app_manager.RyuApp):
 					dpid = int(datapath.id)
 					go_through_switches = self.bfs_and_flood_fill(dpid,src_vlan)
 					switch_count = 0
-					print "src:%s,%s" % (datapath.id,go_through_switches)
+					print "host:%s find path:%s" % (datapath.id,go_through_switches)
 
 					for switch in go_through_switches:
 						now_datapath = self.switches_table[switch]["instance"]
@@ -290,22 +292,6 @@ class sdn_vlan(app_manager.RyuApp):
 						now_out_of_switch_action = now_parser.OFPInstructionActions(now_ofproto.OFPIT_APPLY_ACTIONS,now_output_actions)
 						now_trunk_inst = [now_out_of_switch_action]
 						self.add_flow(datapath=now_datapath, match=vlan_match, inst=now_trunk_inst, priority=20, table=2)
-				
-						switch_count += 1
-
-						if switch_count > len(go_through_switches)-1:
-							break
-
-						# find port to add the rule 
-						for trunk in self.switch_trunks[switch]:
-							if trunk["toswitch"] == go_through_switches[switch_count]:
-
-								go_path_match = now_parser.OFPMatch(eth_dst=pkt_ethernet.src, vlan_vid=0x1000 | src_vlan)
-
-								now_out_of_switch_action = now_parser.OFPInstructionActions(now_ofproto.OFPIT_APPLY_ACTIONS,[now_parser.OFPActionOutput(trunk["port"])])
-								now_trunk_inst = [now_out_of_switch_action]
-								self.add_flow(datapath=now_datapath, match=go_path_match, inst=now_trunk_inst, priority=30, table=2)
-								continue
 
 	### arp
 	def arp_handler(self, datapath, port, pkt_ethernet, pkt_arp):
