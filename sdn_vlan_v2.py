@@ -192,16 +192,14 @@ class sdn_vlan_v2(app_manager.RyuApp):
 		if not pkt_ethernet:
 			return
 
-		if port not in self.find_trunk(datapath.id):
+		# arp
+		pkt_arp =pkt.get_protocol(arp.arp)
 
-			# arp
-			pkt_arp =pkt.get_protocol(arp.arp)
+		if pkt_arp:
+			self.arp_handler(datapath=datapath, port=port, pkt_ethernet=pkt_ethernet, pkt_arp=pkt_arp)
 
-			if pkt_arp:
-				self.arp_handler(datapath=datapath, port=port, pkt_ethernet=pkt_ethernet, pkt_arp=pkt_arp)
-
-			# learning
-			self.learning_handler(datapath, port, pkt)
+		# learning
+		self.learning_handler(datapath, port, pkt)
 
 
 	###### handlers of situations
@@ -232,66 +230,66 @@ class sdn_vlan_v2(app_manager.RyuApp):
 				print "IP is wrong!"
 				return
 
-		if port not in trunks:
-			self.switches_table[datapath.id][pkt_ethernet.src] = port
-			none_vlan_tag_match = parser.OFPMatch(eth_src=pkt_ethernet.src, vlan_vid=0x0000)
-			push_vlan_tag_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+		
+		self.switches_table[datapath.id][pkt_ethernet.src] = port
+		none_vlan_tag_match = parser.OFPMatch(eth_src=pkt_ethernet.src, vlan_vid=0x0000)
+		push_vlan_tag_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
 																[parser.OFPActionPushVlan(ETH_TYPE_8021Q),
 																parser.OFPActionSetField(vlan_vid=src_vlan)])
-			goto_table_2_action = parser.OFPInstructionGotoTable(table_id=2)
-			table_1_inst = [push_vlan_tag_action,goto_table_2_action]
-			self.add_flow(datapath=datapath, match=none_vlan_tag_match, inst=table_1_inst, priority=99, table=1)
+		goto_table_2_action = parser.OFPInstructionGotoTable(table_id=2)
+		table_1_inst = [push_vlan_tag_action,goto_table_2_action]
+		self.add_flow(datapath=datapath, match=none_vlan_tag_match, inst=table_1_inst, priority=99, table=1)
 
-			arp_match = parser.OFPMatch(eth_src=pkt_ethernet.src, eth_dst='ff:ff:ff:ff:ff:ff', vlan_vid=0x0000)
-			arp_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+		arp_match = parser.OFPMatch(eth_src=pkt_ethernet.src, eth_dst='ff:ff:ff:ff:ff:ff', vlan_vid=0x0000)
+		arp_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
 																[parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,ofproto.OFPCML_NO_BUFFER)])
-			table_1_inst = [arp_action]
-			self.add_flow(datapath=datapath, match=arp_match, inst=table_1_inst, priority=999, table=1)
+		table_1_inst = [arp_action]
+		self.add_flow(datapath=datapath, match=arp_match, inst=table_1_inst, priority=999, table=1)
 
 
-			src_ip_and_vlan_match = parser.OFPMatch(eth_dst=pkt_ethernet.src, vlan_vid=0x1000 | src_vlan)
-			goto_the_port_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+		src_ip_and_vlan_match = parser.OFPMatch(eth_dst=pkt_ethernet.src, vlan_vid=0x1000 | src_vlan)
+		goto_the_port_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
 																[parser.OFPActionPopVlan(ETH_TYPE_8021Q),
 																parser.OFPActionOutput(port)])
-			table_2_inst = [goto_the_port_action]
-			self.add_flow(datapath=datapath, match=src_ip_and_vlan_match, inst=table_2_inst, priority=50, table=2)
+		table_2_inst = [goto_the_port_action]
+		self.add_flow(datapath=datapath, match=src_ip_and_vlan_match, inst=table_2_inst, priority=50, table=2)
 			
-			# path
-			# 
-			self.vlans_table.setdefault(src_vlan,set())
-			if datapath.id not in self.vlans_table[src_vlan]:
-				# add vlan subset
-				self.vlans_table[src_vlan].add(datapath.id)
-				vlan_match = parser.OFPMatch(vlan_vid=0x1000 | src_vlan)
-				output_actions = []
-				for trunk in trunks:
-					output_actions.append(parser.OFPActionOutput(trunk))
+		# path
+		# 
+		self.vlans_table.setdefault(src_vlan,set())
+		if datapath.id not in self.vlans_table[src_vlan]:
+			# add vlan subset
+			self.vlans_table[src_vlan].add(datapath.id)
+			vlan_match = parser.OFPMatch(vlan_vid=0x1000 | src_vlan)
+			output_actions = []
+			for trunk in trunks:
+				output_actions.append(parser.OFPActionOutput(trunk))
 
-				out_of_switch_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,output_actions)
-				trunk_inst = [out_of_switch_action]
-				self.add_flow(datapath=datapath, match=vlan_match, inst=trunk_inst, priority=20, table=2)
+			out_of_switch_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,output_actions)
+			trunk_inst = [out_of_switch_action]
+			self.add_flow(datapath=datapath, match=vlan_match, inst=trunk_inst, priority=20, table=2)
 				
-				# Create a path to vlan subset
-				if len(self.vlans_table[src_vlan]) > 1:
-					dpid = int(datapath.id)
-					go_through_switches = self.bfs_and_flood_fill(dpid,src_vlan)
-					switch_count = 0
-					print "host:%s find path:%s" % (datapath.id,go_through_switches)
+			# Create a path to vlan subset
+			if len(self.vlans_table[src_vlan]) > 1:
+				dpid = int(datapath.id)
+				go_through_switches = self.bfs_and_flood_fill(dpid,src_vlan)
+				switch_count = 0
+				print "switch:%s, vlan:%s, find path:%s" % (datapath.id, src_vlan, go_through_switches)
 
-					for switch in go_through_switches:
-						now_datapath = self.switches_table[switch]["instance"]
-						now_ofproto = now_datapath.ofproto
-						now_parser = now_datapath.ofproto_parser
+				for switch in go_through_switches:
+					now_datapath = self.switches_table[switch]["instance"]
+					now_ofproto = now_datapath.ofproto
+					now_parser = now_datapath.ofproto_parser
 
-						# open the trunk
-						vlan_match = now_parser.OFPMatch(vlan_vid=0x1000 | src_vlan)
-						now_output_actions = []
-						for trunk in self.find_trunk(switch):
-							now_output_actions.append(now_parser.OFPActionOutput(trunk))
+					# open the trunk
+					vlan_match = now_parser.OFPMatch(vlan_vid=0x1000 | src_vlan)
+					now_output_actions = []
+					for trunk in self.find_trunk(switch):
+						now_output_actions.append(now_parser.OFPActionOutput(trunk))
 
-						now_out_of_switch_action = now_parser.OFPInstructionActions(now_ofproto.OFPIT_APPLY_ACTIONS,now_output_actions)
-						now_trunk_inst = [now_out_of_switch_action]
-						self.add_flow(datapath=now_datapath, match=vlan_match, inst=now_trunk_inst, priority=20, table=2)
+					now_out_of_switch_action = now_parser.OFPInstructionActions(now_ofproto.OFPIT_APPLY_ACTIONS,now_output_actions)
+					now_trunk_inst = [now_out_of_switch_action]
+					self.add_flow(datapath=now_datapath, match=vlan_match, inst=now_trunk_inst, priority=20, table=2)
 
 	### arp
 	def arp_handler(self, datapath, port, pkt_ethernet, pkt_arp):
