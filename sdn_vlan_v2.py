@@ -4,7 +4,6 @@ from ryu.base import app_manager
 from ryu.ofproto import ofproto_v1_3
 from ryu.ofproto.ether import ETH_TYPE_8021Q
 
-
 # control
 from ryu.controller import ofp_event
 from ryu.controller.handler import MAIN_DISPATCHER, CONFIG_DISPATCHER
@@ -17,23 +16,28 @@ from ryu.lib.packet import ipv4
 from ryu.lib.packet import arp
 from ryu.ofproto import ether
 
-
 # vlan set
 from vlan_set import vlans_set
 
 # bfs
 import Queue
 
+# get link
+from ryu.topology import event, switches
+from ryu.topology.api import get_switch, get_link
+
 class sdn_vlan_v2(app_manager.RyuApp):
 	OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 	def __init__(self, *args, **kwargs):
 		super(sdn_vlan_v2, self).__init__(*args, **kwargs)
+		self.topology_api_app = self
 		self.switches_table = {}
 		self.vlans_table = {}
 
 		vlans_config = vlans_set().vlans
 
-		self.switch_trunks = vlans_config["switches"]
+		self.switch_trunks = {}
+
 		self.hosts = vlans_config["hosts"]
 
 	###### other
@@ -146,16 +150,9 @@ class sdn_vlan_v2(app_manager.RyuApp):
 		ofproto = datapath.ofproto
 		parser = datapath.ofproto_parser
 
-		if datapath.id not in self.switch_trunks:
-			print "The switch is not in the lan."
-			return
-
-		if len(self.switch_trunks[datapath.id]) == 0:
-			print "The switch don't have trunk."
-			return
-
 		self.switches_table.setdefault(datapath.id,{})
 		self.switches_table[datapath.id]["instance"] = datapath
+		self.switch_trunks.setdefault(datapath.id,[])
 
 		table_0_match = None
 		goto_table_1_action = parser.OFPInstructionGotoTable(table_id=1)
@@ -189,6 +186,9 @@ class sdn_vlan_v2(app_manager.RyuApp):
 
 		pkt_ethernet = pkt.get_protocol(ethernet.ethernet)
 
+		if pkt_ethernet.ethertype == 35020:
+			return
+
 		if not pkt_ethernet:
 			return
 
@@ -202,6 +202,28 @@ class sdn_vlan_v2(app_manager.RyuApp):
 		self.learning_handler(datapath, port, pkt)
 
 
+	@set_ev_cls(event.EventSwitchEnter)
+	def get_topology(self, ev):
+		switch_list = get_switch(self.topology_api_app, None)
+		switches=[switch.dp.id for switch in switch_list]
+		links_list = get_link(self.topology_api_app, None)
+		links=[(link.src.dpid,link.dst.dpid,{'port':link.src.port_no}) for link in links_list]
+		
+		for link in links_list:
+			add_tag = True
+			
+			for trunk in self.switch_trunks[link.src.dpid]:
+				if link.src.port_no == trunk["port"]:
+					add_tag = False
+			
+			if add_tag:
+				self.switch_trunks[link.src.dpid].append({"toswitch":link.dst.dpid,"port":link.src.port_no})
+		
+		print "switches:%s" % self.switch_trunks
+
+		for switch in switches:
+			self.config_trunk_port(switch)
+	
 	###### handlers of situations
 
 	### learning
@@ -337,3 +359,27 @@ class sdn_vlan_v2(app_manager.RyuApp):
 								)
 						)
 		self.send_packet(datapath, port, pkt)
+
+	###
+
+	def config_trunk_port(self, datapath_id):
+
+		datapath = self.switches_table[datapath_id]["instance"]
+		ofproto = datapath.ofproto
+		parser = datapath.ofproto_parser
+
+		table_0_match = None
+		goto_table_1_action = parser.OFPInstructionGotoTable(table_id=1)
+		table_0_inst = [goto_table_1_action]
+		self.add_flow(datapath=datapath, match=table_0_match, inst=table_0_inst, priority=0, table=0)
+
+		for trunk in self.switch_trunks[datapath.id]:
+			table_1_match = parser.OFPMatch(in_port=trunk["port"])
+			goto_table_2_action = parser.OFPInstructionGotoTable(table_id=2)
+			table_1_inst = [goto_table_2_action]
+			self.add_flow(datapath=datapath, match=table_1_match, inst=table_1_inst, priority=99, table=1)
+
+			trunk_drop_match = parser.OFPMatch(in_port=trunk["port"])
+			# drop
+			self.add_flow(datapath=datapath, match=trunk_drop_match, inst=[], priority=0, table=2)
+		return
