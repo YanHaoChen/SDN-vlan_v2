@@ -209,17 +209,11 @@ class sdn_vlan_v2(app_manager.RyuApp):
 		links_list = get_link(self.topology_api_app, None)
 		links=[(link.src.dpid,link.dst.dpid,{'port':link.src.port_no}) for link in links_list]
 		
+		for switch in self.switch_trunks:
+			self.switch_trunks[switch] = [] 
+
 		for link in links_list:
-			add_tag = True
-			
-			for trunk in self.switch_trunks[link.src.dpid]:
-				if link.src.port_no == trunk["port"]:
-					add_tag = False
-			
-			if add_tag:
-				self.switch_trunks[link.src.dpid].append({"toswitch":link.dst.dpid,"port":link.src.port_no})
-		
-		print "switches:%s" % self.switch_trunks
+			self.switch_trunks[link.src.dpid].append({"toswitch":link.dst.dpid,"port":link.src.port_no})
 
 		for switch in switches:
 			self.config_trunk_port(switch)
@@ -298,14 +292,15 @@ class sdn_vlan_v2(app_manager.RyuApp):
 					now_datapath = self.switches_table[switch]["instance"]
 					now_ofproto = now_datapath.ofproto
 					now_parser = now_datapath.ofproto_parser
-
+					toswitch_mark = []
 					# open the trunk
 					vlan_match = now_parser.OFPMatch(vlan_vid=0x1000 | src_vlan)
 					now_output_actions = []
 					for trunk in self.switch_trunks[switch]:
-						if trunk["toswitch"] in self.vlans_table[src_vlan]:
+						if trunk["toswitch"] in self.vlans_table[src_vlan] and trunk["toswitch"] not in toswitch_mark:
 							now_output_actions.append(now_parser.OFPActionOutput(trunk["port"]))
 							self.vlans_table[src_vlan][switch].append(trunk["port"])
+							toswitch_mark.append(trunk["toswitch"])
 
 					if now_output_actions != []:
 						now_out_of_switch_action = now_parser.OFPInstructionActions(now_ofproto.OFPIT_APPLY_ACTIONS,now_output_actions)
@@ -360,7 +355,7 @@ class sdn_vlan_v2(app_manager.RyuApp):
 						)
 		self.send_packet(datapath, port, pkt)
 
-	###
+	### config trunk port
 
 	def config_trunk_port(self, datapath_id):
 
