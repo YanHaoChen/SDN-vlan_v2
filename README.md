@@ -24,12 +24,6 @@ self.vlans = {
 			 }
 ```
 
-* switches 範例：
-
-```python
-(Switch ID):[{trunk 通往的 Switch:1, trunk 使用的 port:30},{trunk 通往的 Switch:2, trunk 使用的 port:40}]
-```
-
 * hosts 範例：
 
 ```python
