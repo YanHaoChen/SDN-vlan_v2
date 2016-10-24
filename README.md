@@ -4,9 +4,6 @@
 
 ## 功能
 
-* 自動回覆 ARP Request
-	* 去除因 ARP 產生的廣播封包。
-
 * 以 Switch 為單位，建立各個 VLAN 群體，達成 VLAN 封包轉送
 	* 一個 VLAN 產生一棵無迴圈樹，並以此樹轉送封包。
 
@@ -42,14 +39,12 @@ Table 0：
 Table 1:
 	priority=99
 	* Match(eth_src=管轄內主機, vlan_vid=none) -> 加入對應 VLAN tag，轉往 Table 2
-	priority=999
-	* Match(eth_src=管轄內主機, eth_dst='ff:ff:ff:ff:ff:ff') -> 送往 Controller
-
+	
 # 1. VLAN 通道
 # 2. 轉送封包至對應主機
 Table 2:
 	priority=20
-	* Match(vlan_vid=此 Switch 所在的 VLAN 群體) -> 送往 trunk
+	* Match(vlan_vid=此 Switch 所在的 VLAN 群體) -> 送往 trunk、主機
 	priority=50
 	* Match(eth_src ,vlan_vid) -> 送往對應主機
 ```
@@ -63,9 +58,9 @@ Table 2:
 * Switch 符合條件（情境）後：
 	* 情境 1
 		1. 學習此主機，並將規則的優先權設定為 50。
-		2. 在規劃為通道的 trunk 下規則，開通包含此 VLAN ID 的封包，並將規則的優先權設定為 20。
+		2. 在規劃為通道的 trunk 及同 VLAN 的主機下規則，開通包含此 VLAN ID 的封包，並將規則的優先權設定為 20。
 	* 情境 2
-		1. 在規劃為通道的 trunk 下規則，開通包含此 VLAN ID 的封包，並將規則的優先權設定為 20。
+		1. 在規劃為通道的 trunk 及同 VLAN 的主機下規則，開通包含此 VLAN ID 的封包，並將規則的優先權設定為 20。
 
 ## VLAN 建樹邏輯
 
