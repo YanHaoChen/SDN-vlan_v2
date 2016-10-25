@@ -45,7 +45,7 @@ class sdn_vlan_v2(app_manager.RyuApp):
 	### find trunk
 	def find_trunk(self, dpid):
 		result = []
-		
+
 		for trunk in self.switch_trunks[dpid]:
 			result.append(trunk["port"])
 
@@ -64,7 +64,7 @@ class sdn_vlan_v2(app_manager.RyuApp):
 
 		# bfs and add cost.
 		while not master_queue.empty():
-			
+
 		 	the_node = master_queue.get()
 	 		# find the switch which have some vlan id.
 	 		for switch_trunk in self.switch_trunks[the_node]:
@@ -93,7 +93,7 @@ class sdn_vlan_v2(app_manager.RyuApp):
 	 					next_switch = switch_trunk["toswitch"]
 	 					if next_switch in go_through_mark:
 	 						if go_through_mark[next_switch] < go_through_mark[now_switch]:
-	 							now_switch = next_switch	 			
+	 							now_switch = next_switch
 
 	 			result_array.append(start_node)
 	 			return result_array
@@ -108,7 +108,7 @@ class sdn_vlan_v2(app_manager.RyuApp):
 	 					next_switch = switch_trunk["toswitch"]
 	 					if next_switch in go_through_mark:
 	 						if go_through_mark[next_switch] < go_through_mark[switch]:
-	 							switch = next_switch	 			
+	 							switch = next_switch
 
 	 			now_result.append(start_node)
 	 			result_array.append(now_result)
@@ -171,6 +171,8 @@ class sdn_vlan_v2(app_manager.RyuApp):
 
 		self.switches_table.setdefault(datapath.id,{})
 		self.switches_table[datapath.id]["instance"] = datapath
+		self.switches_table[datapath.id].setdefault("hosts",{})
+		
 		self.switch_trunks.setdefault(datapath.id,[])
 
 		table_0_match = None
@@ -220,16 +222,16 @@ class sdn_vlan_v2(app_manager.RyuApp):
 		switches=[switch.dp.id for switch in switch_list]
 		links_list = get_link(self.topology_api_app, None)
 		links=[(link.src.dpid,link.dst.dpid,{'port':link.src.port_no}) for link in links_list]
-		
+
 		for switch in self.switch_trunks:
-			self.switch_trunks[switch] = [] 
+			self.switch_trunks[switch] = []
 
 		for link in links_list:
 			self.switch_trunks[link.src.dpid].append({"toswitch":link.dst.dpid,"port":link.src.port_no})
 
 		for switch in switches:
 			self.config_trunk_port(switch)
-		
+
 	###### handlers of situations
 
 	### learning
@@ -245,7 +247,7 @@ class sdn_vlan_v2(app_manager.RyuApp):
 
 		src_vlan = self.hosts[pkt_ethernet.src]["VLAN_ID"]
 		src_ip = self.hosts[pkt_ethernet.src]["IP"]
-		
+
 		if src_vlan < 0:
 			return
 
@@ -256,7 +258,7 @@ class sdn_vlan_v2(app_manager.RyuApp):
 				print "IP is wrong!"
 				return
 
-		self.switches_table[datapath.id].setdefault("hosts",{})
+
 		self.switches_table[datapath.id]["hosts"][pkt_ethernet.src] = port
 		none_vlan_tag_match = parser.OFPMatch(eth_src=pkt_ethernet.src, vlan_vid=0x0000)
 		push_vlan_tag_action = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
@@ -272,19 +274,19 @@ class sdn_vlan_v2(app_manager.RyuApp):
 																parser.OFPActionOutput(port)])
 		table_2_inst = [goto_the_port_action]
 		self.add_flow(datapath=datapath, match=src_ip_and_vlan_match, inst=table_2_inst, priority=50, table=2)
-		
+
 		vlan_match = parser.OFPMatch(vlan_vid=0x1000 | src_vlan)
 		vlan_broadcast_actions = []
 
 		try:
 			for trunk in self.vlans_table[src_vlan][datapath.id]:
 				vlan_broadcast_actions.append(parser.OFPActionOutput(trunk))
-	
+
 		except:
 			pass
-		
+
 		vlan_broadcast_actions.append(parser.OFPActionPopVlan(ETH_TYPE_8021Q))
-		
+
 		for host in self.switches_table[datapath.id]["hosts"]:
 			if self.hosts[host]["VLAN_ID"] == src_vlan:
 				vlan_broadcast_actions.append(parser.OFPActionOutput(self.switches_table[datapath.id]["hosts"][host]))
@@ -293,9 +295,6 @@ class sdn_vlan_v2(app_manager.RyuApp):
 			broadcast_actions = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,vlan_broadcast_actions)
 			broadcast_inst = [broadcast_actions]
 			self.add_flow(datapath=datapath, match=vlan_match, inst=broadcast_inst, priority=20, table=2)
-
-
-		### shortest path
 
 		### vlan path
 		self.vlans_table.setdefault(src_vlan,{})
@@ -313,15 +312,11 @@ class sdn_vlan_v2(app_manager.RyuApp):
 					del self.vlans_table[src_vlan][datapath.id]
 					return
 
-				switch_count = 0
 				print "switch:%s, vlan:%s, find path:%s" % (datapath.id, src_vlan, go_through_switches)
-
 				#####
+
 				for switch in go_through_switches:
 					self.vlans_table[src_vlan].setdefault(switch,[])
-
-				for switch in go_through_switches:
-
 					now_datapath = self.switches_table[switch]["instance"]
 					now_ofproto = now_datapath.ofproto
 					now_parser = now_datapath.ofproto_parser
@@ -330,13 +325,13 @@ class sdn_vlan_v2(app_manager.RyuApp):
 					vlan_match = now_parser.OFPMatch(vlan_vid=0x1000 | src_vlan)
 					now_output_actions = []
 					for trunk in self.switch_trunks[switch]:
-						if trunk["toswitch"] in self.vlans_table[src_vlan] and trunk["toswitch"] not in toswitch_mark:
+						if trunk["toswitch"] in go_through_switches and trunk["toswitch"] not in toswitch_mark:
 							now_output_actions.append(now_parser.OFPActionOutput(trunk["port"]))
 							self.vlans_table[src_vlan][switch].append(trunk["port"])
 							toswitch_mark.append(trunk["toswitch"])
 
 					now_output_actions.append(parser.OFPActionPopVlan(ETH_TYPE_8021Q))
-					
+
 					for host in self.switches_table[now_datapath.id]["hosts"]:
 						if self.hosts[host]["VLAN_ID"] == src_vlan:
 							now_output_actions.append(now_parser.OFPActionOutput(self.switches_table[now_datapath.id]["hosts"][host]))
@@ -346,8 +341,58 @@ class sdn_vlan_v2(app_manager.RyuApp):
 						now_trunk_inst = [now_out_of_switch_action]
 						self.add_flow(datapath=now_datapath, match=vlan_match, inst=now_trunk_inst, priority=20, table=2)
 
+				# Find the shortest path
+				for start_switch in self.vlans_table[src_vlan]:
+					need_to_find_path_switch = [switch for switch in self.vlans_table[src_vlan] if switch != start_switch]
+					results = self.bfs_and_flood_fill(start_node=start_switch, end_nodes=need_to_find_path_switch)
+
+					all_of_same_vlan_hosts =[host for host in self.switches_table[start_switch]["hosts"] if self.hosts[host]["VLAN_ID"] == src_vlan]
+
+					for result in results:
+						for i in xrange(len(result)-1):
+							now_datapath = self.switches_table[result[i]]["instance"]
+							now_ofproto = now_datapath.ofproto
+							now_parser = now_datapath.ofproto_parser
+							output_action = []
+							for trunk in self.switch_trunks[result[i]]:
+								if trunk["toswitch"] == result[i+1]:
+									output_action = [now_parser.OFPActionOutput(trunk["port"])]
+									break
+
+							for host in all_of_same_vlan_hosts:
+								shortest_match = now_parser.OFPMatch(eth_dst=host, vlan_vid=0x1000 | src_vlan)
+								shortest_action = now_parser.OFPInstructionActions(now_ofproto.OFPIT_APPLY_ACTIONS,output_action)
+
+								inst = [shortest_action]
+								self.add_flow(datapath=now_datapath, match=shortest_match, inst=inst, priority=50, table=2)
+
+		### Update
+		else:
+			need_to_find_path_switch = [switch for switch in self.vlans_table[src_vlan] if switch != datapath.id]
+			results = self.bfs_and_flood_fill(start_node=datapath.id, end_nodes=need_to_find_path_switch)
+
+			all_of_same_vlan_hosts =[host for host in self.switches_table[datapath.id]["hosts"] if self.hosts[host]["VLAN_ID"] == src_vlan]
+
+			for result in results:
+				for i in xrange(len(result)-1):
+					now_datapath = self.switches_table[result[i]]["instance"]
+					now_ofproto = now_datapath.ofproto
+					now_parser = now_datapath.ofproto_parser
+					output_action = []
+					for trunk in self.switch_trunks[result[i]]:
+						if trunk["toswitch"] == result[i+1]:
+							output_action = [now_parser.OFPActionOutput(trunk["port"])]
+							break
+
+					for host in all_of_same_vlan_hosts:
+						shortest_match = now_parser.OFPMatch(eth_dst=host, vlan_vid=0x1000 | src_vlan)
+						shortest_action = now_parser.OFPInstructionActions(now_ofproto.OFPIT_APPLY_ACTIONS,output_action)
+						inst = [shortest_action]
+						self.add_flow(datapath=now_datapath, match=shortest_match, inst=inst, priority=50, table=2)
+
+
 		print "vlan:%s,set:%s" % (src_vlan, self.vlans_table[src_vlan])
-	
+
 	### config trunk port
 
 	def config_trunk_port(self, datapath_id):

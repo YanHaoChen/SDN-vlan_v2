@@ -5,7 +5,9 @@
 ## 功能
 
 * 以 Switch 為單位，建立各個 VLAN 群體，達成 VLAN 封包轉送
-	* 一個 VLAN 產生一棵無迴圈樹，並以此樹轉送封包。
+	* 一個 VLAN 產生一棵無迴圈樹，並以此樹__轉送此 VLAN 的廣播封包__。
+* 同 VLAN 的各主機間，規劃最短路徑轉送封包（並非走 VLAN 樹）
+	* 提高整體效率。
 
 ## 環境配置
 
@@ -29,18 +31,27 @@ Table 0：
 	* 沒有 Match 任何規格 -> 轉送至 Table 1
 
 # 1. 加入對應 VLAN tag
-# 2. 接收 ARP 封包，轉往 Controller
 Table 1:
 	priority=99
 	* Match(eth_src=管轄內主機, vlan_vid=none) -> 加入對應 VLAN tag，轉往 Table 2
 	
-# 1. VLAN 通道
-# 2. 轉送封包至對應主機
+# 1. VLAN 樹通道
+# 2. 同 VLAN 主機間最短路徑
+# 3. 轉送封包至對應主機
+# 4. trunk 預設 Drop
+
 Table 2:
 	priority=20
 	* Match(vlan_vid=此 Switch 所在的 VLAN 群體) -> 送往 trunk、主機
+
 	priority=50
-	* Match(eth_src ,vlan_vid) -> 送往對應主機
+	* Match(eth_dst ,vlan_vid) -> 送往對應 trunk（最短路徑）
+
+	priority=50
+	* Match(eth_dst ,vlan_vid) -> 送往對應主機
+
+	priority=0
+	* Match(in_port=trunk) -> Drop 
 ```
 
 ## VLAN 建樹流程
