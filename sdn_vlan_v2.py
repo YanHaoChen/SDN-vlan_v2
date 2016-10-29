@@ -136,6 +136,7 @@ class sdn_vlan_v2(app_manager.RyuApp):
 												command=datapath.ofproto.OFPFC_DELETE,
 												out_port=datapath.ofproto.OFPP_ANY,
 												out_group=ofproto.OFPG_ANY,
+												table_id=table
 												match=match)
 
 		datapath.send_msg(mod)
