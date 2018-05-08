@@ -10,6 +10,13 @@
 * 同 VLAN 的各主機間，規劃最短路徑轉送封包（並非走 VLAN 樹）
 	* 提高整體效率。
 
+## 執行
+
+因使用到`EventSwitchEnter`事件來紀錄拓樸，所以在執行`sdn_vlan_v2.py`時，需加入`--observe-links`：
+```shell
+$ ryu-manager --observe-links sdn_vlan_v2.py
+```
+
 ## 環境配置
 
 ```python
