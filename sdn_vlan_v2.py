@@ -136,7 +136,7 @@ class sdn_vlan_v2(app_manager.RyuApp):
 												command=datapath.ofproto.OFPFC_DELETE,
 												out_port=datapath.ofproto.OFPP_ANY,
 												out_group=ofproto.OFPG_ANY,
-												table_id=table
+												table_id=table,
 												match=match)
 
 		datapath.send_msg(mod)
@@ -213,8 +213,9 @@ class sdn_vlan_v2(app_manager.RyuApp):
 
 		if not pkt_ethernet:
 			return
-
-		self.learning_handler(datapath, port, pkt)
+		
+		if (pkt_ethernet.src in self.hosts) or (pkt_ethernet.dst in self.hosts):
+			self.learning_handler(datapath, port, pkt)
 
 
 	@set_ev_cls(event.EventSwitchEnter)
